@@ -44,7 +44,7 @@ class Minesweeper {
           x: x,
           y: y,
           mined: false,
-          state: CellState.COVERED_UNMARKED
+          state: CellState.COVERED_DEFAULT
         });
       }
       this.board.push(col);
