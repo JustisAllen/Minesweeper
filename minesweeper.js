@@ -9,7 +9,7 @@ function Minesweeper() {
 /** Initializes the board */
 Minesweeper.prototype.initBoard = function() {
   for (let x = 0; x < 10 ; x++) {
-    col = [];
+    let col = [];
     for (let y = 0; y < 10 ; y++) {
       col.push({
         x: x,
