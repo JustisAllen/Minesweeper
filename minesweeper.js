@@ -58,7 +58,7 @@ class Minesweeper {
     this.initMines();
   }
   
-  /** Initializes the game board */
+  /** Initializes the game board. */
   initBoard() {
     for (let x = 0; x < this.width ; x++) {
       let col = [];
