@@ -209,7 +209,7 @@ class Minesweeper {
     this.numCoveredSafeCells--;
     if (this.board[x][y].numAdjacentMines !== 0) return;
     
-    this.visitAdjacentCells(x, y, (ax, ay) => this.uncoverNumber(ax, ay));
+    this.visitAdjacentCells(x, y, (ax, ay) => void this.uncoverNumber(ax, ay));
   }
 
   /**
