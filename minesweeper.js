@@ -38,7 +38,7 @@ class Minesweeper {
     this.initBoard_();
     this.initMines_();
   }
-  
+
   /** Initializes the game board. */
   initBoard_() {
     for (let x = 0; x < this.getWidth() ; x++) {
@@ -50,13 +50,13 @@ class Minesweeper {
     }
   }
 
-  /** Randomly sets mines on the board */
+  /** Randomly sets the mines on the board. */
   initMines_() {
     while (this.mines_.size < this.numMines) {
-      let randomX = Math.floor(Math.random() * this.getWidth());
-      let randomY = Math.floor(Math.random() * this.getHeight());
-      let cellId = this.board_[randomX][randomY].getId();
-      
+      const randomX = Math.floor(Math.random() * this.getWidth());
+      const randomY = Math.floor(Math.random() * this.getHeight());
+      const cellId = this.board_[randomX][randomY].getId();
+
       // Since Set, only adds and updates size if not already added
       this.mines_.add(cellId);
     }
@@ -69,20 +69,45 @@ class Minesweeper {
   flagsRemaining() {
     return this.getNumMines() - this.numFlagsUsed_;
   }
+  
+  /**
+   * Toggles the covered state of the covered cell at the given coordinates:
+   * - COVERED_DEFAULT -> COVERED_FLAGGED
+   * - COVERED_FLAGGED -> COVERED_QUESTION_MARKED
+   * - COVERED_QUESTION_MARKED -> COVERED_DEFAULT
+   * @param {number} x
+   * @param {number} y
+   */
+  toggleCoveredState(x, y) {    
+    switch (this.board_[x][y].state_) {
+      case CellState.COVERED_DEFAULT:
+        this.board_[x][y].state_ = CellState.COVERED_FLAGGED;
+        this.numFlagsUsed_++;
+        break;
+      case CellState.COVERED_FLAGGED:
+        this.board[x][y].state_ = CellState.COVERED_QUESTION_MARKED;
+        this.numFlagsUsed_--;
+        break;
+      case CellState.COVERED_QUESTION_MARKED:
+        this.board_[x][y].state_ = CellState.COVERED_DEFAULT;
+        break;
+    }
+  }
 
   /**
    * Uncovers the cell at the given coordinates, ending the game if
-   * it is a mine (loss) or the last safe cell is uncovered (win).
+   * it has a mine (loss) or the last safe cell is uncovered (win).
+   * Also uncovers adjacent cells if neither these cells nor this cell have mines.
    * @param {number} x
    * @param {number} y
    */
   uncover(x, y) {  
-    let isMine = this.isMine_(x, y);
-    if (!isMine) {
+    const hasMine = this.hasMine_(x, y);
+    if (!hasMine) {
       this.uncoverNumber_(x, y);
     }
     
-    if (isMine || this.numCoveredSafeCells_ === 0) {
+    if (hasMine || this.numCoveredSafeCells_ === 0) {
       this.endGame_(x, y);
     }
   }
@@ -90,16 +115,16 @@ class Minesweeper {
   /**
    * @param {number} x
    * @param {number} y
-   * @return {boolean} Whether the cell at the given coordinates contains a mine.
+   * @return {boolean} Whether the cell at the given coordinates has a mine.
    */
-  isMine_(x, y) {
-    let cellId = this.board_[x][y].getId();
+  hasMine_(x, y) {
+    const cellId = this.board_[x][y].getId();
     return this.mines_.has(cellId);
   }
   
   /**
-   * Uncovers the numbered cell at the given coordinates and adjacent cells
-   * if this cell is not adjacent to any mines.
+   * Uncovers the numbered cell at the given coordinates.
+   * Also uncovers adjacent cells if this cell is not adjacent to any mines.
    * @param {number} x
    * @param {number} y
    */
@@ -108,49 +133,55 @@ class Minesweeper {
     
     this.board_[x][y].state_ = CellState.UNCOVERED_NUMBER;
     this.numCoveredSafeCells_--;
-    this.visitAdjacentCells_(
-        x, y, (ax, ay) => { if (this.isMine_(ax, ay)) this.board_[x][y].numAdjacentMines_++ });
     
-    if (this.board_[x][y].numAdjacentMines_ !== 0) return;
+    this.board_[x][y].numAdjacentMines_ = 0;
+    const adjacentCellCoordinates = this.getAdjacentCellCoordinates_(x, y);    
+    adjacentCellCoordinates.forEach(
+        (xy) => {
+          if (this.hasMine_(...xy)) this.board_[x][y].numAdjacentMines_++);
+        });
+    if (this.board_[x][y].numAdjacentMines_ > 0) return;
     
-    this.visitAdjacentCells_(x, y, (ax, ay) => void this.uncoverNumber_(ax, ay));
+    adjacentCellCoordinates.forEach((xy) => void this.uncoverNumber_(...xy));
   }
   
   /**
-   * Applies the given function to each cell adjacent to the given coordinates.
    * @param {number} x
    * @param {number} y
-   * @param {function(number, number): undefined} f
+   * @return {!Array<!Array<number>>} The cell coordinates adjacent to the given ones.
    */
-  visitAdjacentCells_(x, y, f) {
+  getAdjacentCellCoordinates_(x, y) {
+    let adjacentCellCoordinates = [];
     for (let i = -1; i <= 1; i++) {
       for (let j = -1; j <= 1; j++) {
         if (i === 0 && j === 0) continue;
         
-        let adjacentX = x + i;
+        const adjacentX = x + i;
         if (adjacentX < 0 || adjacentX >= this.getWidth()) continue;
         
-        let adjacentY = y + j;
+        const adjacentY = y + j;
         if (adjacentY < 0 || adjacentY >= this.getHeight()) continue;
         
-        f(adjacentX, adjacentY);
+        adjacentCellCoordinates.push([adjacentX, adjacentY]);
       }
     }
+    return adjacentCellCoordinates;
   }
   
   /**
    * Ends the game, identifying all mines and incorrecty flagged cells.
+   * Freezes the state of the game.
    * @param {number} lastX The X coordinate of the last uncovered cell.
    * @param {number} lastY The Y coordinate of the last uncovered cell.
    */
   endGame_(lastX, lastY) {
     this.visitBoard(
         (x, y) => {
-          let isMined = this.isMine_(x, y);
-          let state = this.board_[x][y].getState();
-          if (!isMined && state !== CellState.COVERED_FLAGGED) return;
+          const hasMine = this.hasMine_(x, y);
+          const state = this.board_[x][y].getState();
+          if (!hasMine && state !== CellState.COVERED_FLAGGED) return;
 
-          if (!isMined) {
+          if (!hasMine) {
             this.board_[x][y].state_ = CellState.UNCOVERED_INCORRECT_FLAG;
             return
           }
@@ -181,30 +212,6 @@ class Minesweeper {
       for (let y = 0; y < this.getHeight() ; y++) {
         f(x, y);
       }
-    }
-  }
-
-  /**
-   * Toggles the covered state of the covered cell at the given coordinates:
-   * - COVERED_DEFAULT -> COVERED_FLAGGED
-   * - COVERED_FLAGGED -> COVERED_QUESTION_MARKED
-   * - COVERED_QUESTION_MARKED -> COVERED_DEFAULT
-   * @param {number} x
-   * @param {number} y
-   */
-  toggleCoveredState(x, y) {    
-    switch (this.board_[x][y].state_) {
-      case CellState.COVERED_DEFAULT:
-        this.board_[x][y].state_ = CellState.COVERED_FLAGGED;
-        this.numFlagsUsed_++;
-        break;
-      case CellState.COVERED_FLAGGED:
-        this.board[x][y].state_ = CellState.COVERED_QUESTION_MARKED;
-        this.numFlagsUsed_--;
-        break;
-      case CellState.COVERED_QUESTION_MARKED:
-        this.board_[x][y].state_ = CellState.COVERED_DEFAULT;
-        break;
     }
   }
 }
