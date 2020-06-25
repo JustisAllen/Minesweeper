@@ -3,6 +3,246 @@
  * a single-player puzzle video game.
  */
 
+/** A Minesweeper game. */
+class Minesweeper {
+  
+  /**
+   * Creates a Minesweeper game with the given width, height,
+   * and number of mines.
+   * @param {number} width
+   * @param {number} height
+   * @param {number} numMines
+   */
+  constructor(width, height, numMines) {
+    
+    /** @type {function(): number} */
+    this.getWidth = () => width;
+    /** @type {function(): number} */
+    this.getHeight = () => height;
+    /** @type {function(): number} */
+    this.getNumMines = () => numMines;
+    
+    /** @private {number} */
+    this.numCoveredSafeCells_ = width * height - numMines;
+    /** @private {number} */
+    this.numFlagsUsed_ = 0;
+    
+    /** @private {!Array<!Array<!Cell>>} */
+    this.board_ = [];
+    /** @type {function(): !Array<!Array<!Cell>>} */
+    this.getBoard = () => this.board_;
+    
+    /** @private {!Set<string>} */
+    this.mines_ = new Set();
+    
+    this.initBoard_();
+    this.initMines_();
+  }
+  
+  /** Initializes the game board. */
+  initBoard_() {
+    for (let x = 0; x < this.getWidth() ; x++) {
+      let col = [];
+      for (let y = 0; y < this.getHeight() ; y++) {
+        col.push(Cell(x, y));
+      }
+      this.board_.push(col);
+    }
+  }
+
+  /** Randomly sets mines on the board */
+  initMines_() {
+    while (this.mines_.size < this.numMines) {
+      let randomX = Math.floor(Math.random() * this.getWidth());
+      let randomY = Math.floor(Math.random() * this.getHeight());
+      let cellId = this.board_[randomX][randomY].getId();
+      
+      // Since Set, only adds and updates size if not already added
+      this.mines_.add(cellId);
+    }
+  }
+  
+  /**
+   * @return {number} The difference between the number of flagged cells
+   *     and the number of mines on the board.
+   */
+  flagsRemaining() {
+    return this.getNumMines() - this.numFlagsUsed_;
+  }
+
+  /**
+   * Uncovers the cell at the given coordinates, ending the game if
+   * it is a mine (loss) or the last safe cell is uncovered (win).
+   * @param {number} x
+   * @param {number} y
+   */
+  uncover(x, y) {  
+    let isMine = this.isMine_(x, y);
+    if (!isMine) {
+      this.uncoverNumber_(x, y);
+    }
+    
+    if (isMine || this.numCoveredSafeCells_ === 0) {
+      this.endGame_(x, y);
+    }
+  }
+  
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @return {boolean} Whether the cell at the given coordinates contains a mine.
+   */
+  isMine_(x, y) {
+    let cellId = this.board_[x][y].getId();
+    return this.mines_.has(cellId);
+  }
+  
+  /**
+   * Uncovers the numbered cell at the given coordinates and adjacent cells
+   * if this cell is not adjacent to any mines.
+   * @param {number} x
+   * @param {number} y
+   */
+  uncoverNumber_(x, y) {
+    if (this.board_[x][y].state_ !== CellState.COVERED_DEFAULT) return;
+    
+    this.board_[x][y].state_ = CellState.UNCOVERED_NUMBER;
+    this.numCoveredSafeCells_--;
+    this.visitAdjacentCells_(
+        x, y, (ax, ay) => { if (this.isMine_(ax, ay)) this.board_[x][y].numAdjacentMines_++ });
+    
+    if (this.board_[x][y].numAdjacentMines_ !== 0) return;
+    
+    this.visitAdjacentCells_(x, y, (ax, ay) => void this.uncoverNumber_(ax, ay));
+  }
+  
+  /**
+   * Applies the given function to each cell adjacent to the given coordinates.
+   * @param {number} x
+   * @param {number} y
+   * @param {function(number, number): undefined} f
+   */
+  visitAdjacentCells_(x, y, f) {
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        if (i === 0 && j === 0) continue;
+        
+        let adjacentX = x + i;
+        if (adjacentX < 0 || adjacentX >= this.getWidth()) continue;
+        
+        let adjacentY = y + j;
+        if (adjacentY < 0 || adjacentY >= this.getHeight()) continue;
+        
+        f(adjacentX, adjacentY);
+      }
+    }
+  }
+  
+  /**
+   * Ends the game, identifying all mines and incorrecty flagged cells.
+   * @param {number} lastX The X coordinate of the last uncovered cell.
+   * @param {number} lastY The Y coordinate of the last uncovered cell.
+   */
+  endGame_(lastX, lastY) {
+    this.visitBoard(
+        (x, y) => {
+          let isMined = this.isMine_(x, y);
+          let state = this.board_[x][y].getState();
+          if (!isMined && state !== CellState.COVERED_FLAGGED) return;
+
+          if (!isMined) {
+            this.board_[x][y].state_ = CellState.UNCOVERED_INCORRECT_FLAG;
+            return
+          }
+
+          if (state !== CellState.COVERED_FLAGGED) {
+            this.board_[x][y].state_ = CellState.UNCOVERED_UNFLAGGED_MINE;
+            return
+          }
+
+          this.board_[x][y].state_ = CellState.UNCOVERED_CORRECT_MINE;
+        })
+  
+    if (this.numCoveredSafeCells_ > 0) {
+      this.board_[lastX][lastY].state_ = this.UNCOVERED_EXPLODED_MINE;
+    }
+    
+    // Prevent further changes to this game.
+    Object.freeze(this);
+  }
+  
+  /**
+   * Applies the given function to each cell on the board.
+   * TODO: Remove and inline if only used once above.
+   * @param {function(number, number): undefined} f
+   */
+  visitBoard_(f) {
+    for (let x = 0; x < this.getWidth() ; x++) {
+      for (let y = 0; y < this.getHeight() ; y++) {
+        f(x, y);
+      }
+    }
+  }
+
+  /**
+   * Toggles the covered state of the covered cell at the given coordinates:
+   * - COVERED_DEFAULT -> COVERED_FLAGGED
+   * - COVERED_FLAGGED -> COVERED_QUESTION_MARKED
+   * - COVERED_QUESTION_MARKED -> COVERED_DEFAULT
+   * @param {number} x
+   * @param {number} y
+   */
+  toggleCoveredState(x, y) {    
+    switch (this.board_[x][y].state_) {
+      case CellState.COVERED_DEFAULT:
+        this.board_[x][y].state_ = CellState.COVERED_FLAGGED;
+        this.numFlagsUsed_++;
+        break;
+      case CellState.COVERED_FLAGGED:
+        this.board[x][y].state_ = CellState.COVERED_QUESTION_MARKED;
+        this.numFlagsUsed_--;
+        break;
+      case CellState.COVERED_QUESTION_MARKED:
+        this.board_[x][y].state_ = CellState.COVERED_DEFAULT;
+        break;
+    }
+  }
+}
+
+/** A cell on a Minesweeper game board. */
+class Cell {
+  
+  /**
+   * Creates a Minesweeper cell with the given coordinates.
+   * @param {number} x
+   * @param {number} y
+   */
+  constructor(x, y) {
+    
+    /** @type {function(): number} */
+    this.getX = () => x;
+    /** @type {function(): number} */
+    this.getY = () => y;
+    
+    /** @type {function(): string} */
+    this.getId = () => x + ',' + y;
+    
+    /** @private {string} */
+    this.state_ = CellState.COVERED_DEFAULT;
+    /** @type {function(): string} */
+    this.getState = () => this.state_;
+    
+    /**
+     * The number of mines adjacent to this cell.
+     * Only non-null if this cell's state is UNCOVERED_NUMBER.
+     * @private {?number}
+     */
+    this.numAdjacentMines_ = null;
+    /** @type {function(): number} */
+    this.getNumAdjacentMines = () => this.numAdjacentMines_;
+  }
+}
+
 /**
  * Possible states for each cell on the game board.
  * @enum {string}
@@ -25,222 +265,4 @@ const CellState = {
   UNCOVERED_UNFLAGGED_MINE: 'unflagged_mine',
   /** Uncovered, correctly flagged mine (game end). */
   UNCOVERED_CORRECT_MINE: 'correct_mine',
-}
-
-/** A Minesweeper game. */
-class Minesweeper {
-  
-  /**
-   * Creates a Minesweeper game with the given width, height,
-   * and number of mines.
-   * @param {number} width
-   * @param {number} height
-   * @param {number} numMines
-   */
-  constructor(width, height, numMines) {
-    
-    /** @const {number} */
-    this.width = width;
-    /** @const {number} */
-    this.height = height;
-    /** @const {number} */
-    this.numMines = numMines;
-    
-    /** @type {number} */
-    this.numCoveredSafeCells = width * height - numMines;
-    /** @type {number} */
-    this.numFlagsUsed = 0;
-    
-    /** @type {Array<Array>} */
-    this.board = [];
-    
-    this.initBoard();
-    this.initMines();
-  }
-  
-  /** Initializes the game board. */
-  initBoard() {
-    for (let x = 0; x < this.width ; x++) {
-      let col = [];
-      for (let y = 0; y < this.height ; y++) {
-        col.push({
-            x: x,
-            y: y,
-            mined: false,
-            state: CellState.COVERED_DEFAULT
-        });
-      }
-      this.board.push(col);
-    }
-  }
-
-  /**
-   * Randomly sets mines on the board in random cells,
-   * then sets each safe, non-mined cell's number of adjacent mines.
-   */
-  initMines() {
-    
-    // Set mines
-    for (let numMinesRemaining = this.numMines; numMinesRemaining > 0; ) {
-      let randomX = Math.floor(Math.random() * this.width);
-      let randomY = Math.floor(Math.random() * this.height);
-      if (this.board[randomX][randomY].mined) continue;
-      
-      this.board[randomX][randomY].mined = true;
-      numMinesRemaining--;
-    }
-    
-    // Set adjacent mines values
-    this.visitBoard(
-        (x, y) => {
-          if (this.board[x][y].mined) return;
-          this.board[x][y].numAdjacentMines = this.countAdjacentMines(x, y);
-        });
-  }
-
-  /**
-   * Applies the given function to each cell on the board.
-   * @param {function(number, number): undefined} f
-   */
-  visitBoard(f) {
-    for (let x = 0; x < this.width ; x++) {
-      for (let y = 0; y < this.height ; y++) {
-        f(x, y);
-      }
-    }
-  }
-  
-  /**
-   * Counts how many mines are adjacent to the given cell coordinates.
-   * @param {number} x
-   * @param {number} y
-   * @return {number}
-   */
-  countAdjacentMines(x, y) {
-    if (this.board[x][y].mined) return;
-    
-    let numMines = 0;
-    this.visitAdjacentCells(
-        x, y, (ax, ay) => { if (this.board[ax][ay].mined) numMines++ });
-    return numMines;
-  }
-
-  /**
-   * Applies the given function to each cell adjacent to the given coordinates.
-   * @param {number} x
-   * @param {number} y
-   * @param {function(number, number): undefined} f
-   */
-  visitAdjacentCells(x, y, f) {
-    for (let i = -1; i <= 1; i++) {
-      for (let j = -1; j <= 1; j++) {
-        if (i === 0 && j === 0) continue;
-        
-        let adjacentX = x + i;
-        if (adjacentX < 0 || adjacentX >= this.width) continue;
-        
-        let adjacentY = y + j;
-        if (adjacentY < 0 || adjacentY >= this.height) continue;
-        
-        f(adjacentX, adjacentY);
-      }
-    }
-  }
-
-  /**
-   * Uncovers the cell at the given coordinates, ending the game if
-   * it is mined (loss) or the last safe cell is uncovered (win).
-   * @param {number} x
-   * @param {number} y
-   */
-  uncover(x, y) {  
-    let isMined = this.board[x][y].mined;
-    if (!isMined) {
-      this.uncoverNumber(x, y);
-    }
-    
-    if (isMined || this.numCoveredSafeCells === 0) {
-      this.endGame(x, y);
-    }
-  }
-  
-  /**
-   * Ends the game, identifying all mines and incorrecty flagged cells.
-   * @param {number} lastX The X coordinate of the last uncovered cell.
-   * @param {number} lastY The Y coordinate of the last uncovered cell.
-   */
-  endGame(lastX, lastY) {
-    this.visitBoard(
-        (x, y) => {
-          if (!this.board[x][y].mined
-              && this.board[x][y].state !== CellState.COVERED_FLAGGED) return;
-
-          if (!this.board[x][y].mined) {
-            this.board[x][y].state = CellState.UNCOVERED_INCORRECT_FLAG;
-            return
-          }
-
-          if (this.board[x][y].state !== CellState.COVERED_FLAGGED) {
-            this.board[x][y].state = CellState.UNCOVERED_UNFLAGGED_MINE;
-            return
-          }
-
-          this.board[x][y].state = CellState.UNCOVERED_CORRECT_MINE;
-        })
-  
-    if (this.numCoveredSafeCells > 0) {
-      this.board[lastX][lastY].state = this.UNCOVERED_EXPLODED_MINE;
-    }
-    
-    // Prevent further changes to this game.
-    Object.freeze(this);
-  }
-
-  /**
-   * Uncovers the numbered cell at the given coordinates and adjacent cells
-   * if this cell is not adjacent to any mines.
-   * @param {number} x
-   * @param {number} y
-   */
-  uncoverNumber(x, y) {
-    if (this.board[x][y].state !== CellState.COVERED_DEFAULT) return;
-    
-    this.board[x][y].state = CellState.UNCOVERED_NUMBER;
-    this.numCoveredSafeCells--;
-    if (this.board[x][y].numAdjacentMines !== 0) return;
-    
-    this.visitAdjacentCells(x, y, (ax, ay) => void this.uncoverNumber(ax, ay));
-  }
-
-  /**
-   * Toggles the covered state of the covered cell at the given coordinates:
-   * - COVERED_DEFAULT -> COVERED_FLAGGED
-   * - COVERED_FLAGGED -> COVERED_QUESTION_MARKED
-   * - COVERED_QUESTION_MARKED -> COVERED_DEFAULT
-   * @param {number} x
-   * @param {number} y
-   */
-  toggleCoveredState(x, y) {    
-    switch (this.board[x][y].state) {
-      case CellState.COVERED_DEFAULT:
-        this.board[x][y].state = CellState.COVERED_FLAGGED;
-        this.numFlagsUsed++;
-        break;
-      case CellState.COVERED_FLAGGED:
-        this.board[x][y].state = CellState.COVERED_QUESTION_MARKED;
-        this.numFlagsUsed--;
-        break;
-      case CellState.COVERED_QUESTION_MARKED:
-        this.board[x][y].state = CellState.COVERED_DEFAULT;
-        break;
-    }
-  }
-  
-  /**
-   * @return {number} The difference between the number of flagged cells
-   *     and the number of mines on the board.
-   */
-  flagsRemaining() {
-    return this.numMines - this.numFlagsUsed;
-  }
 }
