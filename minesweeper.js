@@ -36,38 +36,37 @@ class Minesweeper {
     this.mines_ = new Set();
     
     this.initBoard_();
-    this.initMines_();
   }
 
   /** Initializes the game board. */
   initBoard_() {
-    for (let x = 0; x < this.getWidth() ; x++) {
+    const width = this.getWidth();
+    const height = this.getHeight();
+    for (let x = 0; x < width; x++) {
       let col = [];
-      for (let y = 0; y < this.getHeight() ; y++) {
+      for (let y = 0; y < height; y++) {
         col.push(Cell(x, y));
       }
       this.board_.push(col);
     }
   }
-
-  /** Randomly sets the mines on the board. */
-  initMines_() {
-    while (this.mines_.size < this.numMines) {
-      const randomX = Math.floor(Math.random() * this.getWidth());
-      const randomY = Math.floor(Math.random() * this.getHeight());
-      const cellId = this.board_[randomX][randomY].getId();
-
-      // Since Set, only adds and updates size if not already added
-      this.mines_.add(cellId);
-    }
-  }
   
   /**
-   * @return {number} The difference between the number of flagged cells
-   *     and the number of mines on the board.
+   * @return {number} The difference between the number of mines on the board
+   *     and the number of flagged cells.
    */
-  flagsRemaining() {
+  getNumFlagsRemaining() {
     return this.getNumMines() - this.numFlagsUsed_;
+  }
+  
+  /** @return {boolean} Whether the game has ended. */
+  isDone() {
+    return Object.isFrozen(this);
+  }
+  
+  /** @return {boolean} Whether the game is won. */
+  isWin() {
+    return this.numCoveredSafeCells_ === 0;
   }
   
   /**
@@ -98,10 +97,17 @@ class Minesweeper {
    * Uncovers the cell at the given coordinates, ending the game if
    * it has a mine (loss) or the last safe cell is uncovered (win).
    * Also uncovers adjacent cells if neither these cells nor this cell have mines.
+   * The first uncover event sets the mines on the board,
+   * ensuring that no mine is set at the first uncovered cell.
    * @param {number} x
    * @param {number} y
    */
-  uncover(x, y) {  
+  uncover(x, y) {
+    if (this.initMines_) {
+      this.initMines_(x, y);
+      this.initMines_ = null;
+    }
+    
     const hasMine = this.hasMine_(x, y);
     if (!hasMine) {
       this.uncoverNumber_(x, y);
@@ -109,6 +115,26 @@ class Minesweeper {
     
     if (hasMine || this.numCoveredSafeCells_ === 0) {
       this.endGame_(x, y);
+    }
+  }
+  
+  /**
+   * Randomly sets mines on the board anywhere except at the given coordinates.
+   * @param {number} notX
+   * @param {number} notY
+   */
+  initMines_(notX, notY) {
+    const numMines = this.getNumMines();
+    const width = this.getWidth();
+    const height = this.getHeight();
+    while (this.mines_.size < numMines) {
+      const randomX = Math.floor(Math.random() * width);
+      const randomY = Math.floor(Math.random() * height);
+      if (randomX === notX && randomY === notY) continue;
+      
+      const cellId = this.board_[randomX][randomY].getId();
+      // Since Set, only adds and updates size if not already added
+      this.mines_.add(cellId);
     }
   }
   
@@ -151,16 +177,18 @@ class Minesweeper {
    * @return {!Array<!Array<number>>} The cell coordinates adjacent to the given ones.
    */
   getAdjacentCellCoordinates_(x, y) {
+    const width = this.getWidth();
+    const height = this.getHeight();
     let adjacentCellCoordinates = [];
     for (let i = -1; i <= 1; i++) {
       for (let j = -1; j <= 1; j++) {
         if (i === 0 && j === 0) continue;
         
         const adjacentX = x + i;
-        if (adjacentX < 0 || adjacentX >= this.getWidth()) continue;
+        if (adjacentX < 0 || adjacentX >= width) continue;
         
         const adjacentY = y + j;
-        if (adjacentY < 0 || adjacentY >= this.getHeight()) continue;
+        if (adjacentY < 0 || adjacentY >= height) continue;
         
         adjacentCellCoordinates.push([adjacentX, adjacentY]);
       }
@@ -175,24 +203,27 @@ class Minesweeper {
    * @param {number} lastY The Y coordinate of the last uncovered cell.
    */
   endGame_(lastX, lastY) {
-    this.visitBoard(
-        (x, y) => {
-          const hasMine = this.hasMine_(x, y);
-          const state = this.board_[x][y].getState();
-          if (!hasMine && state !== CellState.COVERED_FLAGGED) return;
+    const width = this.getWidth();
+    const height = this.getHeight();
+    for (let x = 0; x < width; x++) {
+      for (let y = 0; y < height; y++) {
+        const hasMine = this.hasMine_(x, y);
+        const state = this.board_[x][y].getState();
+        if (!hasMine && state !== CellState.COVERED_FLAGGED) continue;
 
-          if (!hasMine) {
-            this.board_[x][y].state_ = CellState.UNCOVERED_INCORRECT_FLAG;
-            return
-          }
+        if (!hasMine) {
+          this.board_[x][y].state_ = CellState.UNCOVERED_INCORRECT_FLAG;
+          continue;
+        }
 
-          if (state !== CellState.COVERED_FLAGGED) {
-            this.board_[x][y].state_ = CellState.UNCOVERED_UNFLAGGED_MINE;
-            return
-          }
+        if (state !== CellState.COVERED_FLAGGED) {
+          this.board_[x][y].state_ = CellState.UNCOVERED_UNFLAGGED_MINE;
+          continue;
+        }
 
-          this.board_[x][y].state_ = CellState.UNCOVERED_CORRECT_MINE;
-        })
+        this.board_[x][y].state_ = CellState.UNCOVERED_CORRECT_MINE;
+      }
+    }
   
     if (this.numCoveredSafeCells_ > 0) {
       this.board_[lastX][lastY].state_ = this.UNCOVERED_EXPLODED_MINE;
@@ -200,19 +231,6 @@ class Minesweeper {
     
     // Prevent further changes to this game.
     Object.freeze(this);
-  }
-  
-  /**
-   * Applies the given function to each cell on the board.
-   * TODO: Remove and inline if only used once above.
-   * @param {function(number, number): undefined} f
-   */
-  visitBoard_(f) {
-    for (let x = 0; x < this.getWidth() ; x++) {
-      for (let y = 0; y < this.getHeight() ; y++) {
-        f(x, y);
-      }
-    }
   }
 }
 
