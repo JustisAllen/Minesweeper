@@ -93,7 +93,7 @@ class Minesweeper {
         this.numFlagsUsed_++;
         break;
       case CellState.COVERED_FLAGGED:
-        this.board[x][y].state_ = CellState.COVERED_QUESTION_MARKED;
+        this.board_[x][y].state_ = CellState.COVERED_QUESTION_MARKED;
         this.numFlagsUsed_--;
         break;
       case CellState.COVERED_QUESTION_MARKED:
@@ -103,8 +103,9 @@ class Minesweeper {
   }
 
   /**
-   * Uncovers the cell at the given coordinates, ending the game if
-   * it has a mine (loss) or the last safe cell is uncovered (win).
+   * Uncovers the default covered cell at the given coordinates,
+   * ending the game if it has a mine (loss) or
+   * the last safe cell is uncovered (win).
    * Also uncovers adjacent cells if neither these cells nor this cell have mines.
    * The first uncover event sets the mines on the board,
    * ensuring that no mine is set at the first uncovered cell.
@@ -112,6 +113,8 @@ class Minesweeper {
    * @param {number} y A non-negative integer, where 0 <= y < height.
    */
   uncover(x, y) {
+    if (this.board_[x][y].getState() !== CellState.COVERED_DEFAULT) return;
+    
     if (this.initMines_) {
       this.initMines_(x, y);
       this.initMines_ = null;
@@ -158,7 +161,7 @@ class Minesweeper {
   }
   
   /**
-   * Uncovers the numbered cell at the given coordinates.
+   * Uncovers the covered, numbered cell at the given coordinates.
    * Also uncovers adjacent cells if this cell is not adjacent to any mines.
    * @param {number} x A non-negative integer, where 0 <= x < width.
    * @param {number} y A non-negative integer, where 0 <= y < height.
@@ -170,7 +173,7 @@ class Minesweeper {
     this.numCoveredSafeCells_--;
     
     this.board_[x][y].numAdjacentMines_ = 0;
-    const adjacentCellCoordinates = this.getAdjacentCellCoordinates_(x, y);    
+    const adjacentCellCoordinates = this.getAdjacentCellCoordinates_(x, y);
     adjacentCellCoordinates.forEach(
         (xy) => {
           if (this.hasMine_(...xy)) this.board_[x][y].numAdjacentMines_++);
