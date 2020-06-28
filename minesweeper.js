@@ -15,8 +15,6 @@ class Minesweeper {
    */
   constructor(width, height, numMines) {
     const numBoardCells = width * height;
-    
-    // Avoid infinite loop in initMines_
     if (numMines >= numBoardCells) {
       throw new RangeError(
           `Expected numMines < width * height. Got numMines: ${numMines}, ` +
@@ -167,16 +165,18 @@ class Minesweeper {
    */
   initMines_(notX, notY) {
     const numMines = this.getNumMines();
-    const width = this.getWidth();
-    const height = this.getHeight();
-    while (this.mines_.size < numMines) {
-      const randomX = Math.floor(Math.random() * width);
-      const randomY = Math.floor(Math.random() * height);
-      if (randomX === notX && randomY === notY) continue;
-      
-      const cellId = this.board_[randomX][randomY].getId();
-      // Since Set, only adds and updates size if not already added
+    const board = this.board_.slice();
+    board[notX].splice(notY, 1);
+    for (let i = 0; i < numMines; i++) {
+      const randomX = Math.floor(Math.random() * board.length);
+      const randomY = Math.floor(Math.random() * board[randomX].length);
+      const cellId = board[randomX][randomY].getId();
       this.mines_.add(cellId);
+      if (board[randomX].length === 1) {
+        board.splice(randomX, 1);
+      } else {
+        board[randomX].splice(randomY, 1);
+      }
     }
   }
   
