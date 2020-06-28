@@ -20,8 +20,9 @@ class Minesweeper {
     // Avoid infinite loop in initMines_
     if (numMines >= numBoardCells) {
       throw new RangeError(
-          'Expected numMines < width * height. ' +
-          `Got width: ${width}, height: ${height}, numMines: ${numMines}.`);
+          `Expected numMines < width * height. Got numMines: ${numMines}, ` +
+          `(width * height): ${numBoardCells}, width: ${width}, ` +
+          `height: ${height}.`);
     }
     
     /** @return {number} */
@@ -35,6 +36,9 @@ class Minesweeper {
     this.numCoveredSafeCells_ = numBoardCells - numMines;
     /** @private {number} */
     this.numFlagsUsed_ = 0;
+    
+    /** @return {boolean} */
+    this.isLoss = () => false;
     
     /** @private {!Array<!Array<!Cell>>} */
     this.board_ = [];
@@ -73,21 +77,17 @@ class Minesweeper {
     return Object.isFrozen(this);
   }
   
-  /** @return {boolean} Whether the game is won. */
-  isWin() {
-    return this.numCoveredSafeCells_ === 0;
-  }
-  
   /**
    * Toggles the covered state of the covered cell at the given coordinates:
    * - COVERED_DEFAULT -> COVERED_FLAGGED
    * - COVERED_FLAGGED -> COVERED_QUESTION_MARKED
    * - COVERED_QUESTION_MARKED -> COVERED_DEFAULT
-   * @param {number} x A non-negative integer, where 0 <= x < width.
-   * @param {number} y A non-negative integer, where 0 <= y < height.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
    */
-  toggleCoveredState(x, y) {    
-    switch (this.board_[x][y].getState()) {
+  toggleCoveredState(x, y) {
+    const state = this.board_[x][y].getState();
+    switch (state) {
       case CellState.COVERED_DEFAULT:
         this.board_[x][y].state_ = CellState.COVERED_FLAGGED;
         this.numFlagsUsed_++;
@@ -99,6 +99,9 @@ class Minesweeper {
       case CellState.COVERED_QUESTION_MARKED:
         this.board_[x][y].state_ = CellState.COVERED_DEFAULT;
         break;
+      default:
+        console.error(`Expected a covered state. Got ${state}.`);
+        break;
     }
   }
 
@@ -107,33 +110,44 @@ class Minesweeper {
    * ending the game if it has a mine (loss) or
    * the last safe cell is uncovered (win).
    * Also uncovers adjacent cells if neither these cells nor this cell have mines.
-   * The first uncover event sets the mines on the board,
+   * The first valid uncover event sets the mines on the board,
    * ensuring that no mine is set at the first uncovered cell.
-   * @param {number} x A non-negative integer, where 0 <= x < width.
-   * @param {number} y A non-negative integer, where 0 <= y < height.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
    */
-  uncover(x, y) {
-    if (this.board_[x][y].getState() !== CellState.COVERED_DEFAULT) return;
+  uncover(x, y) {    
+    if (!this.isState_(x, y, CellState.COVERED_DEFAULT)) return;
     
     if (this.initMines_) {
       this.initMines_(x, y);
       this.initMines_ = null;
     }
     
-    const hasMine = this.hasMine_(x, y);
-    if (!hasMine) {
-      this.uncoverNumber_(x, y);
+    this.uncoverDefaultCovered_(x, y);
+    this.maybeEndGame_();
+  }
+  
+  /**
+   * Returns true if the state of the cell at the given coordinates is the same
+   * as the given expected state; otherwise, logs an error and returns false.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
+   * @param {string} expectedState
+   * @return {boolean}
+   */
+  isState_(x, y, expectedState) {
+    const gotState = this.board_[x][y].getState();
+    const sameState = gotState === expectedState;
+    if (!sameState) {
+      console.error(`Expected the ${expectedState} state. Got ${gotState}.`);
     }
-    
-    if (hasMine || this.numCoveredSafeCells_ === 0) {
-      this.endGame_(x, y);
-    }
+    return sameState;
   }
   
   /**
    * Randomly sets mines on the board anywhere except at the given coordinates.
-   * @param {number} notX A non-negative integer, where 0 <= notX < width.
-   * @param {number} notY A non-negative integer, where 0 <= notY < height.
+   * @param {number} notX An integer, where 0 <= notX < width.
+   * @param {number} notY An integer, where 0 <= notY < height.
    */
   initMines_(notX, notY) {
     const numMines = this.getNumMines();
@@ -151,8 +165,23 @@ class Minesweeper {
   }
   
   /**
-   * @param {number} x A non-negative integer, where 0 <= x < width.
-   * @param {number} y A non-negative integer, where 0 <= y < height.
+   * Uncovers the default covered cell at the given coordinates.
+   * Also uncovers adjacent cells if neither these cells nor this cell have mines.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
+   */
+  uncoverDefaultCovered_(x, y) {
+    if (!this.hasMine_(x, y)) {
+      this.uncoverNumber_(x, y);
+    } else {
+      this.board_[x][y].state_ = CellState.UNCOVERED_EXPLODED_MINE;
+      this.isLoss = () => true;
+    }
+  }
+  
+  /**
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
    * @return {boolean} Whether the cell at the given coordinates has a mine.
    */
   hasMine_(x, y) {
@@ -163,35 +192,38 @@ class Minesweeper {
   /**
    * Uncovers the covered, numbered cell at the given coordinates.
    * Also uncovers adjacent cells if this cell is not adjacent to any mines.
-   * @param {number} x A non-negative integer, where 0 <= x < width.
-   * @param {number} y A non-negative integer, where 0 <= y < height.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
    */
   uncoverNumber_(x, y) {
-    if (this.board_[x][y].getState() !== CellState.COVERED_DEFAULT) return;
-    
     this.board_[x][y].state_ = CellState.UNCOVERED_NUMBER;
     this.numCoveredSafeCells_--;
     
     this.board_[x][y].numAdjacentMines_ = 0;
-    const adjacentCellCoordinates = this.getAdjacentCellCoordinates_(x, y);
-    adjacentCellCoordinates.forEach(
-        (xy) => {
-          if (this.hasMine_(...xy)) this.board_[x][y].numAdjacentMines_++);
-        });
+    const adjacentCells = this.getAdjacentCells_(x, y);
+    for (const cell of adjacentCells) {      
+      if (this.hasMine_(cell.getX(), cell.getY())) {
+        this.board_[x][y].numAdjacentMines_++;
+      }
+    }    
     if (this.board_[x][y].numAdjacentMines_ > 0) return;
     
-    adjacentCellCoordinates.forEach((xy) => void this.uncoverNumber_(...xy));
+    for (const cell of adjacentCells) {
+      if (cell.getState() === CellState.COVERED_DEFAULT) {
+        this.uncoverNumber_(cell.getX(), cell.getY())
+      }
+    }
   }
   
   /**
-   * @param {number} x A non-negative integer, where 0 <= x < width.
-   * @param {number} y A non-negative integer, where 0 <= y < height.
-   * @return {!Array<!Array<number>>} The cell coordinates adjacent to the given ones.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
+   * @return {!Array<!Cell>} The cells adjacent to the given coordinates.
    */
-  getAdjacentCellCoordinates_(x, y) {
+  getAdjacentCells_(x, y) {
     const width = this.getWidth();
     const height = this.getHeight();
-    let adjacentCellCoordinates = [];
+    let adjacentCells = [];
     for (let i = -1; i <= 1; i++) {
       for (let j = -1; j <= 1; j++) {
         if (i === 0 && j === 0) continue;
@@ -202,21 +234,21 @@ class Minesweeper {
         const adjacentY = y + j;
         if (adjacentY < 0 || adjacentY >= height) continue;
         
-        adjacentCellCoordinates.push([adjacentX, adjacentY]);
+        adjacentCells.push(this.board[adjacentX][adjacentY]);
       }
     }
-    return adjacentCellCoordinates;
+    return adjacentCells;
   }
   
   /**
-   * Ends the game, identifying all mines and incorrecty flagged cells.
-   * Freezes the state of the game.
-   * @param {number} lastX The X coordinate of the last uncovered cell.
-   *     A non-negative integer, where 0 <= lastX < width.
-   * @param {number} lastY The Y coordinate of the last uncovered cell.
-   *     A non-negative integer, where 0 <= lastY < height.
+   * Ends the game if a mine has exploded (loss)
+   * or there are no more covered safe cells (win). If the game should end,
+   * then reveals all mines and incorrecty flagged cells,
+   * and freezes the state of the game.
    */
-  endGame_(lastX, lastY) {
+  maybeEndGame_() {
+    if (!this.isLoss() && this.numCoveredSafeCells_ > 0) return;
+    
     const width = this.getWidth();
     const height = this.getHeight();
     for (let x = 0; x < width; x++) {
@@ -238,13 +270,44 @@ class Minesweeper {
         this.board_[x][y].state_ = CellState.UNCOVERED_CORRECT_MINE;
       }
     }
-  
-    if (this.numCoveredSafeCells_ > 0) {
-      this.board_[lastX][lastY].state_ = this.UNCOVERED_EXPLODED_MINE;
-    }
     
     // Prevent further changes to this game.
     Object.freeze(this);
+  }
+  
+  /**
+   * Uncovers the default covered cells adjacent to the cell
+   * at the given coordinates if the number of adjacent flagged cells equals
+   * the number of adjacent mines. May uncover a mine and lose the game
+   * if any of the flagged cells do not actually have a mine.
+   * @param {number} x An integer, where 0 <= x < width.
+   * @param {number} y An integer, where 0 <= y < height.
+   */
+  uncoverAdjacentCells(x, y) {
+    if (!this.isState_(x, y, CellState.UNCOVERED_NUMBER)) return;
+    
+    const adjacentCells = this.getAdjacentCells_(x, y);
+    let numAdjacentFlags = 0;
+    for (const adjacentCell of adjacentCells) {
+      if (adjacentCell.getState() === CellState.COVERED_FLAGGED) {
+        numAdjacentFlags++;
+      }
+    }
+    
+    const numAdjacentMines = this.board_[x][y].getNumAdjacentMines();
+    if (numAdjacentFlags !== numAdjacentMines) {
+      console.error(
+          `Expected the number of adjacent flags (${numAdjacentFlags}) ` +
+          `to equal the number of adjacent mines (${numAdjacentMines}).`);
+      return;
+    }
+    
+    for (const adjacentCell of adjacentCells) {
+      if (adjacentCell.getState() === CellState.COVERED_DEFAULT) {
+        this.uncoverDefaultCovered_(adjacentCell.getX(), adjacentCell.getY());
+      }
+    }
+    this.maybeEndGame_();
   }
 }
 
